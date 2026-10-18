@@ -1,0 +1,22 @@
+VideoToolbox: request Metal-compatible pixel buffers instead of OpenGL(ES)-compatible ones.
+
+The only modification VideoFun makes to FFmpeg 6.1.1 (LGPL-2.1+; this patch is under the same
+licence). It reproduces what kingslay/FFmpegKit's BuildFFmpeg plugin did by string replacement
+(Plugins/BuildFFmpeg/BuildFFMPEG.swift, BuildFFMPEG.init), so decoded frames have the same buffer
+attributes as with the binaries the app used before the LGPL rebuild. It is also REQUIRED to compile for
+visionOS, where kCVPixelBufferOpenGLESCompatibilityKey is "unavailable: not available on visionOS".
+
+--- a/libavcodec/videotoolbox.c
++++ b/libavcodec/videotoolbox.c
+@@ -784,9 +784,9 @@
+     CFDictionarySetValue(buffer_attributes, kCVPixelBufferWidthKey, w);
+     CFDictionarySetValue(buffer_attributes, kCVPixelBufferHeightKey, h);
+ #if TARGET_OS_IPHONE
+-    CFDictionarySetValue(buffer_attributes, kCVPixelBufferOpenGLESCompatibilityKey, kCFBooleanTrue);
++    CFDictionarySetValue(buffer_attributes, kCVPixelBufferMetalCompatibilityKey, kCFBooleanTrue);
+ #else
+-    CFDictionarySetValue(buffer_attributes, kCVPixelBufferIOSurfaceOpenGLTextureCompatibilityKey, kCFBooleanTrue);
++    CFDictionarySetValue(buffer_attributes, kCVPixelBufferMetalCompatibilityKey, kCFBooleanTrue);
+ #endif
+
+     CFRelease(io_surface_properties);

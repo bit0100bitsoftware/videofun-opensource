@@ -1,0 +1,50 @@
+TLS: verify peer certificates by default, with an application-supplied default CA file.
+
+Second modification VideoFun makes to FFmpeg 6.1.1 (LGPL-2.1+; this patch is under the same
+licence). Upstream defaults `tls_verify` to 0, so https:// media was accepted from any server,
+including one presenting an untrusted or mismatched certificate. HLS/DASH segment and key
+requests do not inherit options passed to the first open, so the default itself must change.
+GnuTLS has no system trust store on tvOS/visionOS (lib/system/certs.c only implements the Apple
+keychain path for macOS), so when no `ca_file` is given the CA file named by the environment
+variable FFMPEG_TLS_DEFAULT_CA_FILE is used. The application sets it to a bundled copy of the
+Mozilla CA list. `tls_verify=0` still turns verification off per open.
+
+--- a/libavformat/tls.c	2026-10-18 15:45:52
++++ b/libavformat/tls.c	2026-10-18 15:45:52
+@@ -19,6 +19,7 @@
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
++#include <stdlib.h>
+ #include "avformat.h"
+ #include "internal.h"
+ #include "network.h"
+@@ -79,6 +80,17 @@
+     ret = set_options(c, uri);
+     if (ret < 0)
+         return ret;
++
++    /* No CA file given: use the process-wide default, if the application set one. GnuTLS has no
++     * system trust store on tvOS/visionOS, so verification needs an explicit CA bundle. */
++    if (!c->ca_file) {
++        const char *default_ca = getenv("FFMPEG_TLS_DEFAULT_CA_FILE");
++        if (default_ca && *default_ca) {
++            c->ca_file = av_strdup(default_ca);
++            if (!c->ca_file)
++                return AVERROR(ENOMEM);
++        }
++    }
+ 
+     if (c->listen)
+         snprintf(opts, sizeof(opts), "?listen=1");
+--- a/libavformat/tls.h	2026-10-18 15:45:52
++++ b/libavformat/tls.h	2026-10-18 15:45:52
+@@ -46,7 +46,7 @@
+ #define TLS_COMMON_OPTIONS(pstruct, options_field) \
+     {"ca_file",    "Certificate Authority database file", offsetof(pstruct, options_field . ca_file),   AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+     {"cafile",     "Certificate Authority database file", offsetof(pstruct, options_field . ca_file),   AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+-    {"tls_verify", "Verify the peer certificate",         offsetof(pstruct, options_field . verify),    AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, .flags = TLS_OPTFL }, \
++    {"tls_verify", "Verify the peer certificate",         offsetof(pstruct, options_field . verify),    AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, .flags = TLS_OPTFL }, \
+     {"cert_file",  "Certificate file",                    offsetof(pstruct, options_field . cert_file), AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+     {"key_file",   "Private key file",                    offsetof(pstruct, options_field . key_file),  AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+     {"listen",     "Listen for incoming connections",     offsetof(pstruct, options_field . listen),    AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, .flags = TLS_OPTFL }, \
