@@ -30,7 +30,7 @@ automatic download archives leave out the submodule.
 
 ## Our changes
 
-- **FFmpeg:** two patches, under FFmpeg's own licence:
+- **FFmpeg:** three patches, under FFmpeg's own licence:
   - [0001-videotoolbox-metal-compatible-buffers.patch](patches/0001-videotoolbox-metal-compatible-buffers.patch)
     asks Apple's hardware decoder for Metal-compatible picture buffers instead of OpenGL-compatible
     ones; the latter do not exist on visionOS.
@@ -38,6 +38,10 @@ automatic download archives leave out the submodule.
     verification on by default for every https connection. When no CA file is given, it uses the
     file named by `FFMPEG_TLS_DEFAULT_CA_FILE`; the app points that at its bundled copy of the
     Mozilla CA list (MPL-2.0, from curl.se/ca).
+  - [0003-mov-hls-seek-reset.patch](patches/0003-mov-hls-seek-reset.patch) makes seeking work in HLS
+    streams made of fragmented-MP4 segments: it backports FFmpeg's own later fix to the MP4 demuxer
+    (ticket 7359), and makes the HLS demuxer judge the first packet after a seek by its
+    presentation time.
 - **GnuTLS, Nettle, GMP, dav1d and AMSMB2/libsmb2:** used unmodified.
 
 ## How the libraries were built

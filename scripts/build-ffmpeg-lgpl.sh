@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# build-ffmpeg-lgpl.sh -- build the LGPL FFmpeg that VideoFun links.
+# build-ffmpeg-lgpl.sh -- build the LGPL FFmpeg that VideoFun links (#29).
 #
 # Produces static .xcframeworks for tvOS, tvOS Simulator, visionOS and visionOS Simulator
 # (arm64 only) into Vendor/FFmpegKit-LGPL/Sources/, which is the local Swift package that
@@ -16,7 +16,8 @@
 #
 # FFmpeg gets the source patches in Scripts/ffmpeg-patches/: 0001 VideoToolbox buffers
 # Metal-compatible (required on visionOS); 0002 TLS certificate verification on by default with an
-# app-supplied CA file. The other libraries are built unmodified.
+# app-supplied CA file (#62); 0003 the mov demuxer resets after an HLS seek, backported from
+# FFmpeg master (#67). The other libraries are built unmodified.
 #
 # FFmpeg 6.1.1 is load-bearing: Platforms/tvOS/Features/Player/dovi_rpu.h vendors that
 # release's internal DOVIContext layout and calls ff_dovi_* from libavcodec. A different
