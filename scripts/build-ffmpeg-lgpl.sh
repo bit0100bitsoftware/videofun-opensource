@@ -2,8 +2,8 @@
 #
 # build-ffmpeg-lgpl.sh -- build the LGPL FFmpeg that VideoFun links (#29).
 #
-# Produces static .xcframeworks for tvOS, tvOS Simulator, visionOS and visionOS Simulator
-# (arm64 only) into Vendor/FFmpegKit-LGPL/Sources/, which is the local Swift package that
+# Produces static .xcframeworks for tvOS, visionOS, iOS/iPadOS (each device + Simulator) and
+# macOS (arm64 only: Apple silicon Macs) into Vendor/FFmpegKit-LGPL/Sources/, which is the local Swift package that
 # project.yml points at. Everything is built from RELEASE TARBALLS whose SHA-256 is pinned
 # below, so the exact corresponding source of every shipped binary is known -- that is an
 # LGPL obligation (docs/FFMPEG-LGPL.md), not a nicety.
@@ -25,9 +25,12 @@
 #
 # Usage:
 #   Scripts/build-ffmpeg-lgpl.sh [WORKDIR]
-#     WORKDIR  scratch for tarballs + build trees (default: $TMPDIR/videofun-ffmpeg-lgpl).
+#     WORKDIR  scratch for tarballs + build trees (default: .work/ffmpeg-lgpl in the repo).
 #              Several GB; delete it afterwards. Only Vendor/FFmpegKit-LGPL/Sources is kept.
-#   PLATFORMS="tvos xros" Scripts/build-ffmpeg-lgpl.sh   # subset (default: all four)
+#   PLATFORMS="tvos xros" Scripts/build-ffmpeg-lgpl.sh   # subset (default: all seven)
+#
+# A subset run REPLACES every xcframework with one holding only that subset's slices (the
+# packaging step builds each xcframework from $PLATFORMS). Build all platforms together.
 #
 # Needs: Xcode command-line tools, meson + ninja (dav1d), pkg-config. No nasm (arm64 only).
 # Takes roughly 30-60 minutes; prints [stage/total] progress lines.
@@ -35,11 +38,12 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="${1:-${TMPDIR:-/tmp}/videofun-ffmpeg-lgpl}"
+WORK="${1:-$REPO/.work/ffmpeg-lgpl}"
 OUT="$REPO/Vendor/FFmpegKit-LGPL/Sources"
-PLATFORMS="${PLATFORMS:-tvos tvsimulator xros xrsimulator}"
+PLATFORMS="${PLATFORMS:-tvos tvsimulator xros xrsimulator ios iossimulator macos}"
 JOBS="$(sysctl -n hw.ncpu)"
-MIN_OS="26.0"   # project.yml deploymentTarget for both tvOS and visionOS
+MIN_OS="26.0"       # project.yml deploymentTarget for tvOS, visionOS and iOS
+MAC_MIN_OS="26.0"   # project.yml deploymentTarget for macOS (equal to MIN_OS today by coincidence)
 
 # name|url|sha256
 SOURCES=(
@@ -53,16 +57,29 @@ SOURCES=(
 log() { printf '%s %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 
 # ---------------------------------------------------------------- platform table
-sdk_of() { case "$1" in tvos) echo appletvos;; tvsimulator) echo appletvsimulator;; xros) echo xros;; xrsimulator) echo xrsimulator;; esac; }
+sdk_of() {
+  case "$1" in
+    tvos) echo appletvos;; tvsimulator) echo appletvsimulator;; xros) echo xros;; xrsimulator) echo xrsimulator;;
+    ios) echo iphoneos;; iossimulator) echo iphonesimulator;; macos) echo macosx;;
+  esac
+}
 triple_of() {
   case "$1" in
     tvos) echo "arm64-apple-tvos$MIN_OS";;
     tvsimulator) echo "arm64-apple-tvos$MIN_OS-simulator";;
     xros) echo "arm64-apple-xros$MIN_OS";;
     xrsimulator) echo "arm64-apple-xros$MIN_OS-simulator";;
+    ios) echo "arm64-apple-ios$MIN_OS";;
+    iossimulator) echo "arm64-apple-ios$MIN_OS-simulator";;
+    macos) echo "arm64-apple-macos$MAC_MIN_OS";;
   esac
 }
-meson_subsystem_of() { case "$1" in tvos) echo tvos;; tvsimulator) echo tvos-simulator;; xros) echo xros;; xrsimulator) echo xros-simulator;; esac; }
+meson_subsystem_of() {
+  case "$1" in
+    tvos) echo tvos;; tvsimulator) echo tvos-simulator;; xros) echo xros;; xrsimulator) echo xros-simulator;;
+    ios) echo ios;; iossimulator) echo ios-simulator;; macos) echo macos;;
+  esac
+}
 
 # ---------------------------------------------------------------- sources
 fetch_sources() {
@@ -293,21 +310,32 @@ excludes_for() {
 make_framework() {  # $1 framework name, $2 static lib path, $3 header dir, $4 platform -> echoes framework dir
   local name="$1" lib="$2" headers="$3" plat="$4"
   local fw="$WORK/frameworks/$plat/$name.framework"
-  rm -rf "$fw"; mkdir -p "$fw/Headers" "$fw/Modules"
-  cp "$lib" "$fw/$name"
-  cp -R "$headers"/. "$fw/Headers/"
+  # macOS frameworks are "deep" (Versions/A/..., Info.plist under Resources, top-level symlinks);
+  # the iOS family (tvOS, visionOS, iOS) use the flat layout. $dir is where the contents go.
+  local dir="$fw" plist="$fw/Info.plist" minkey=MinimumOSVersion minos="$MIN_OS"
+  rm -rf "$fw"
+  if [ "$plat" = macos ]; then
+    dir="$fw/Versions/A"; plist="$dir/Resources/Info.plist"; minkey=LSMinimumSystemVersion; minos="$MAC_MIN_OS"
+    mkdir -p "$dir/Resources"
+  fi
+  mkdir -p "$dir/Headers" "$dir/Modules"
+  cp "$lib" "$dir/$name"
+  cp -R "$headers"/. "$dir/Headers/"
   {
     echo "framework module $name [system] {"
     echo "    umbrella \".\""
     for h in $(excludes_for "$name"); do
-      [ -f "$fw/Headers/$h.h" ] && echo "    exclude header \"$h.h\""
+      [ -f "$dir/Headers/$h.h" ] && echo "    exclude header \"$h.h\""
     done
     echo "    export *"
     echo "}"
-  } >"$fw/Modules/module.modulemap"
+  } >"$dir/Modules/module.modulemap"
   local supported
-  case "$plat" in tvos) supported=AppleTVOS;; tvsimulator) supported=AppleTVSimulator;; xros) supported=XROS;; xrsimulator) supported=XRSimulator;; esac
-  cat >"$fw/Info.plist" <<EOF
+  case "$plat" in
+    tvos) supported=AppleTVOS;; tvsimulator) supported=AppleTVSimulator;; xros) supported=XROS;; xrsimulator) supported=XRSimulator;;
+    ios) supported=iPhoneOS;; iossimulator) supported=iPhoneSimulator;; macos) supported=MacOSX;;
+  esac
+  cat >"$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -320,11 +348,15 @@ make_framework() {  # $1 framework name, $2 static lib path, $3 header dir, $4 p
   <key>CFBundlePackageType</key><string>FMWK</string>
   <key>CFBundleShortVersionString</key><string>6.1.1</string>
   <key>CFBundleVersion</key><string>6.1.1</string>
-  <key>MinimumOSVersion</key><string>$MIN_OS</string>
+  <key>$minkey</key><string>$minos</string>
   <key>CFBundleSupportedPlatforms</key><array><string>$supported</string></array>
 </dict>
 </plist>
 EOF
+  if [ "$plat" = macos ]; then
+    ln -s A "$fw/Versions/Current"
+    for item in "$name" Headers Modules Resources; do ln -s "Versions/Current/$item" "$fw/$item"; done
+  fi
   echo "$fw"
 }
 

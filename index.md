@@ -4,7 +4,7 @@ title: VideoFun — open-source components and source code
 
 # VideoFun — open-source components and source code
 
-VideoFun for Apple TV and Apple Vision Pro is published by **bit0100bit software**. It uses the
+VideoFun for Apple TV, Apple Vision Pro, Mac, iPhone and iPad is published by **bit0100bit software**. It uses the
 open-source libraries below. Each one is distributed under its own licence. The full licence texts
 are in the app (Settings → Licences & Acknowledgements) and inside each source archive on this page.
 
@@ -52,6 +52,8 @@ automatic download archives leave out the submodule.
 - It applies the patches, and stops if one does not apply.
 - It runs each library's `configure` with the exact options used. FFmpeg's configuration has no
   `--enable-gpl`, `--enable-version3` or `--enable-nonfree`.
+- It builds the same sources, with the same options, for every platform the app runs on: Apple TV,
+  Apple Vision Pro, iPhone and iPad, and Mac (plus their simulators).
 
 The script was written for the app's own source tree. It reads the patches from
 `Scripts/ffmpeg-patches/` and writes the built libraries to `Vendor/FFmpegKit-LGPL/Sources/`, both
@@ -60,7 +62,7 @@ the script's parent folder. AMSMB2 is built by Xcode as an ordinary Swift packag
 
 ## Replacing a library and relinking
 
-FFmpeg, GnuTLS, Nettle and GMP are currently linked statically into the app. On request we will
+FFmpeg, GnuTLS, Nettle and GMP are currently linked statically into the app, on every platform. On request we will
 provide the app's object files and the exact link command. With them you can rebuild the app
 against a modified version of any of these libraries. Write to
 [support@bit0100bitsoftware.com](mailto:support@bit0100bitsoftware.com).
